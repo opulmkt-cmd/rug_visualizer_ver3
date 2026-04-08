@@ -3,11 +3,23 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import fs from "fs";
 
 dotenv.config();
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+
+// Load Firebase Applet Config if it exists
+let firebaseAppletConfig: any = {};
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    firebaseAppletConfig = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+  }
+} catch (e) {
+  console.warn("Could not load firebase-applet-config.json");
+}
 
 const rawDomain = process.env.VITE_SHOPIFY_STORE_DOMAIN || '';
 // Clean domain: remove https://, trailing slashes, and ensure .myshopify.com is present if it's just the store name
@@ -28,13 +40,35 @@ async function startServer() {
 
   // API routes FIRST
   app.get("/api/health", (req, res) => {
-    res.json({ status: "ok" });
+    res.json({ status: "ok", serverTime: new Date().toISOString() });
+  });
+
+  app.get("/api/shopify/diagnostics", (req, res) => {
+    const adminToken = SHOPIFY_ADMIN_TOKEN || (req.query.token as string);
+    const storefrontToken = SHOPIFY_STOREFRONT_TOKEN || (req.query.sfToken as string);
+    
+    res.json({
+      domain: SHOPIFY_DOMAIN,
+      hasAdminToken: !!adminToken,
+      adminTokenPrefix: adminToken ? adminToken.substring(0, 6) : null,
+      isAdminTokenValidFormat: adminToken ? adminToken.startsWith('shpat_') : false,
+      hasStorefrontToken: !!storefrontToken,
+      storefrontTokenPrefix: storefrontToken ? storefrontToken.substring(0, 6) : null,
+      env: {
+        NODE_ENV: process.env.NODE_ENV,
+      }
+    });
+  });
+
+  app.get("/api/ping", (req, res) => {
+    res.json({ message: "pong" });
   });
 
   // Proxy for ImgBB Upload
   app.post("/api/image/upload", async (req, res) => {
-    if (!IMGBB_API_KEY) {
-      return res.status(500).json({ error: "ImgBB API Key not configured on server." });
+    const apiKey = IMGBB_API_KEY || req.body.apiKey;
+    if (!apiKey) {
+      return res.status(500).json({ error: "ImgBB API Key not configured." });
     }
 
     const { image } = req.body;
@@ -44,7 +78,7 @@ async function startServer() {
       const formData = new URLSearchParams();
       formData.append('image', image.split(',')[1] || image);
 
-      const response = await fetch(`https://api.imgbb.com/1/upload?key=${IMGBB_API_KEY}`, {
+      const response = await fetch(`https://api.imgbb.com/1/upload?key=${apiKey}`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
@@ -65,8 +99,9 @@ async function startServer() {
 
   // Proxy for Shopify Storefront GraphQL
   app.post("/api/shopify/storefront", async (req, res) => {
-    if (!SHOPIFY_DOMAIN || !SHOPIFY_STOREFRONT_TOKEN) {
-      return res.status(500).json({ error: "Shopify Storefront not configured on server." });
+    const storefrontToken = SHOPIFY_STOREFRONT_TOKEN || req.body.token;
+    if (!SHOPIFY_DOMAIN || !storefrontToken) {
+      return res.status(500).json({ error: "Shopify Storefront not configured." });
     }
 
     try {
@@ -74,9 +109,9 @@ async function startServer() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Shopify-Storefront-Access-Token': SHOPIFY_STOREFRONT_TOKEN,
+          'X-Shopify-Storefront-Access-Token': storefrontToken,
         },
-        body: JSON.stringify(req.body),
+        body: JSON.stringify(req.body.payload || req.body),
       });
 
       const result = await response.json();
@@ -89,26 +124,23 @@ async function startServer() {
   // Firebase Config Endpoint
   app.get("/api/config/firebase", (req, res) => {
     const config = {
-      apiKey: process.env.FIREBASE_API_KEY,
-      authDomain: process.env.FIREBASE_AUTH_DOMAIN,
-      projectId: process.env.FIREBASE_PROJECT_ID,
-      storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID,
-      appId: process.env.FIREBASE_APP_ID,
-      firestoreDatabaseId: process.env.FIREBASE_FIRESTORE_DATABASE_ID
+      apiKey: process.env.FIREBASE_API_KEY || firebaseAppletConfig.apiKey,
+      authDomain: process.env.FIREBASE_AUTH_DOMAIN || firebaseAppletConfig.authDomain,
+      projectId: process.env.FIREBASE_PROJECT_ID || firebaseAppletConfig.projectId,
+      storageBucket: process.env.FIREBASE_STORAGE_BUCKET || firebaseAppletConfig.storageBucket,
+      messagingSenderId: process.env.FIREBASE_MESSAGING_SENDER_ID || firebaseAppletConfig.messagingSenderId,
+      appId: process.env.FIREBASE_APP_ID || firebaseAppletConfig.appId,
+      firestoreDatabaseId: process.env.FIREBASE_FIRESTORE_DATABASE_ID || firebaseAppletConfig.firestoreDatabaseId
     };
-
-    if (!config.apiKey) {
-      console.warn("Firebase API Key is missing in environment variables.");
-    }
 
     res.json(config);
   });
 
   // Shopify Dynamic Checkout Endpoint (Creates a Product + Checkout)
   app.post("/api/shopify/create-custom-checkout", async (req, res) => {
-    if (!SHOPIFY_DOMAIN || !SHOPIFY_ADMIN_TOKEN) {
-      return res.status(500).json({ error: "Shopify Admin API not configured on server." });
+    const adminToken = SHOPIFY_ADMIN_TOKEN || req.body.adminToken;
+    if (!SHOPIFY_DOMAIN || !adminToken) {
+      return res.status(500).json({ error: "Shopify Admin API not configured." });
     }
 
     const { title, price, imageUrl, attributes, type } = req.body;
@@ -137,13 +169,13 @@ async function startServer() {
 
     try {
       const shopifyUrl = `https://${SHOPIFY_DOMAIN}/admin/api/2024-01/products.json`;
-      console.log(`Calling Shopify REST API at: ${shopifyUrl}`);
+      console.log(`Calling Shopify REST API at: ${shopifyUrl} with token starting with: ${adminToken.substring(0, 6)}`);
 
       const productResponse = await fetch(shopifyUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': SHOPIFY_ADMIN_TOKEN,
+          'X-Shopify-Access-Token': adminToken,
         },
         body: JSON.stringify(productPayload),
       });
@@ -151,8 +183,17 @@ async function startServer() {
       if (!productResponse.ok) {
         const errorText = await productResponse.text();
         console.error(`Shopify API HTTP Error ${productResponse.status}:`, errorText);
+        
+        let customMessage = `Shopify API error (${productResponse.status}).`;
+        if (productResponse.status === 401) {
+          customMessage = "Invalid Shopify Admin Token. Please ensure you are using the 'Admin API Access Token' (starts with 'shpat_'), NOT the API Key or Secret Key.";
+        } else if (productResponse.status === 403) {
+          customMessage = "Insufficient Shopify Permissions. Please ensure your Custom App has 'write_products' and 'write_draft_orders' scopes enabled.";
+        }
+
         return res.status(productResponse.status).json({ 
-          error: `Shopify API error (${productResponse.status}). Please check your Admin API Token and Scopes.` 
+          error: customMessage,
+          details: errorText
         });
       }
 
@@ -175,8 +216,9 @@ async function startServer() {
 
   // Shopify Plan Upgrade Endpoint (Creates a Draft Order)
   app.post("/api/shopify/create-plan-checkout", async (req, res) => {
-    if (!SHOPIFY_DOMAIN || !SHOPIFY_ADMIN_TOKEN) {
-      return res.status(500).json({ error: "Shopify Admin API not configured on server." });
+    const adminToken = SHOPIFY_ADMIN_TOKEN || req.body.adminToken;
+    if (!SHOPIFY_DOMAIN || !adminToken) {
+      return res.status(500).json({ error: "Shopify Admin API not configured." });
     }
 
     const { email, userId } = req.body;
@@ -206,7 +248,7 @@ async function startServer() {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'X-Shopify-Access-Token': SHOPIFY_ADMIN_TOKEN,
+          'X-Shopify-Access-Token': adminToken,
         },
         body: JSON.stringify(draftOrderPayload),
       });
@@ -228,7 +270,8 @@ async function startServer() {
 
   // Verify Shopify Draft Order Status
   app.get("/api/shopify/verify-upgrade/:id", async (req, res) => {
-    if (!SHOPIFY_DOMAIN || !SHOPIFY_ADMIN_TOKEN) {
+    const adminToken = SHOPIFY_ADMIN_TOKEN || (req.query.token as string);
+    if (!SHOPIFY_DOMAIN || !adminToken) {
       return res.status(500).json({ error: "Shopify Admin API not configured." });
     }
 
@@ -237,7 +280,7 @@ async function startServer() {
     try {
       const response = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/2024-01/draft_orders/${id}.json`, {
         headers: {
-          'X-Shopify-Access-Token': SHOPIFY_ADMIN_TOKEN,
+          'X-Shopify-Access-Token': adminToken,
         }
       });
 
