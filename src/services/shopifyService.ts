@@ -56,30 +56,19 @@ export const shopifyService = {
     };
 
     try {
-      let result;
+      // Use server proxy for Storefront API to avoid CORS issues in some environments
+      const response = await fetch('/api/shopify/storefront', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          payload: { query, variables },
+          token: storefrontToken 
+        }),
+      });
       
-      if (storefrontToken) {
-        // Direct call if token is in frontend
-        const response = await fetch(`https://${SHOPIFY_DOMAIN}/api/2024-01/graphql.json`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Shopify-Storefront-Access-Token': storefrontToken,
-          },
-          body: JSON.stringify({ query, variables }),
-        });
-        result = await response.json();
-      } else {
-        // Fallback to server proxy
-        const response = await fetch('/api/shopify/storefront', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ query, variables }),
-        });
-        result = await response.json();
-      }
+      const result = await response.json();
 
       if (result.errors) {
         console.error('Shopify GraphQL Errors:', result.errors);
@@ -112,7 +101,7 @@ export const shopifyService = {
       { key: 'Prompt', value: config.prompt || 'Custom Design' },
       { key: 'Construction', value: config.construction || 'Hand-knotted' },
       { key: 'Material', value: config.materialTypes?.join(', ') || 'Wool' },
-      { key: 'Size', value: `${config.width}x${config.length} ${config.shape}` },
+      { key: 'Size', value: `${config.width}x${config.length} ${config.shape || ''}` },
       { key: 'Pile', value: `${config.pileType} (${config.pileHeight})` },
     ];
     return attributes;
@@ -121,59 +110,23 @@ export const shopifyService = {
   async createDynamicCheckout(input: { title: string, price: number, imageUrl: string, attributes: any[], email?: string, type: 'deposit' | 'sample' | 'credits' }) {
     try {
       const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
-      let variantId;
+      
+      // MUST use server proxy for Admin API because of CORS
+      const response = await fetch('/api/shopify/create-custom-checkout', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ ...input, adminToken }),
+      });
 
-      if (adminToken) {
-        // Direct call if admin token is in frontend
-        const descriptionHtml = `<strong>Type: ${input.type === 'credits' ? 'Credit Top-up' : (input.type === 'sample' ? 'Sample' : 'Deposit')}</strong><br/><br/><ul>${input.attributes.map((a: any) => `<li><strong>${a.key}:</strong> ${a.value}</li>`).join('')}</ul>`;
-        
-        const productPayload = {
-          product: {
-            title: input.title || "Custom Rug Design",
-            status: "active",
-            body_html: descriptionHtml,
-            images: input.imageUrl ? [{ src: input.imageUrl }] : [],
-            variants: [
-              {
-                price: input.price.toString(),
-                inventory_policy: "continue",
-                requires_shipping: input.type !== 'credits',
-                taxable: true
-              }
-            ]
-          }
-        };
-
-        const response = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/2024-01/products.json`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Shopify-Access-Token': adminToken,
-          },
-          body: JSON.stringify(productPayload),
-        });
-
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.errors ? JSON.stringify(result.errors) : 'Shopify Admin API Error');
-        variantId = `gid://shopify/ProductVariant/${result.product.variants[0].id}`;
-      } else {
-        // Fallback to server proxy
-        const response = await fetch('/api/shopify/create-custom-checkout', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(input),
-        });
-
-        const result = await response.json();
-        if (!response.ok) {
-          throw new Error(result.error || 'Failed to create custom product');
-        }
-        variantId = result.variantId;
+      const result = await response.json();
+      if (!response.ok) {
+        throw new Error(result.error || 'Failed to create custom product');
       }
+      const variantId = result.variantId;
 
-      // 2. Create a checkout using the new variant (Storefront API)
+      // 2. Create a checkout using the new variant
       const checkoutUrl = await this.createCheckout({
         variantId,
         quantity: 1,
@@ -191,47 +144,10 @@ export const shopifyService = {
     try {
       const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
       
-      if (adminToken) {
-        const draftOrderPayload = {
-          draft_order: {
-            line_items: [
-              {
-                title: "Opul Pro Plan Upgrade",
-                price: "20.00",
-                quantity: 1,
-                requires_shipping: false,
-                taxable: false
-              }
-            ],
-            customer: { email },
-            use_customer_default_address: false,
-            note: `User Upgrade: ${userId}`,
-            tags: ["PlanUpgrade", userId]
-          }
-        };
-
-        const response = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/2024-01/draft_orders.json`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'X-Shopify-Access-Token': adminToken,
-          },
-          body: JSON.stringify(draftOrderPayload),
-        });
-
-        const result = await response.json();
-        if (!response.ok) throw new Error(result.errors ? JSON.stringify(result.errors) : "Failed to create draft order");
-
-        return { 
-          invoiceUrl: result.draft_order.invoice_url,
-          draftOrderId: result.draft_order.id 
-        };
-      }
-
       const response = await fetch('/api/shopify/create-plan-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, userId }),
+        body: JSON.stringify({ email, userId, adminToken }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to create upgrade checkout');
@@ -246,21 +162,7 @@ export const shopifyService = {
     try {
       const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
 
-      if (adminToken) {
-        const response = await fetch(`https://${SHOPIFY_DOMAIN}/admin/api/2024-01/draft_orders/${draftOrderId}.json`, {
-          headers: {
-            'X-Shopify-Access-Token': adminToken,
-          }
-        });
-
-        const result = await response.json();
-        if (!response.ok) throw new Error("Failed to fetch draft order");
-
-        const isPaid = result.draft_order.status === 'completed' || result.draft_order.order_id !== null;
-        return isPaid;
-      }
-
-      const response = await fetch(`/api/shopify/verify-upgrade/${draftOrderId}`);
+      const response = await fetch(`/api/shopify/verify-upgrade/${draftOrderId}?token=${adminToken}`);
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Failed to verify upgrade');
       return result.isPaid;
