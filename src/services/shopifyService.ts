@@ -22,7 +22,7 @@ export const shopifyService = {
       throw new Error('Shopify Configuration Missing. Please check your Settings for VITE_SHOPIFY_STORE_DOMAIN.');
     }
 
-    const storefrontToken = process.env.SHOPIFY_STOREFRONT_ACCESS_TOKEN;
+   
 
     console.log(`Creating Shopify checkout for domain: ${SHOPIFY_DOMAIN}`);
 
