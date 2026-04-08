@@ -12,9 +12,29 @@ export async function initFirebase() {
   if (app) return { auth, db };
 
   try {
-    app = initializeApp(firebaseConfig);
+    // Try to fetch from server first for consistency
+    const response = await fetch('/api/config/firebase');
+    let config;
+    
+    if (response.ok) {
+      config = await response.json();
+    } else {
+      // Fallback to local import if server fails
+      config = firebaseConfig;
+    }
+
+    if (!config || !config.apiKey) {
+      // Final fallback to local import
+      config = firebaseConfig;
+    }
+
+    if (!config || !config.apiKey) {
+      throw new Error('Firebase configuration not found. Please ensure Firebase is set up.');
+    }
+
+    app = initializeApp(config);
     auth = getAuth(app);
-    db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+    db = getFirestore(app, config.firestoreDatabaseId || '(default)');
 
     // Run connection test
     testConnection();
@@ -22,7 +42,15 @@ export async function initFirebase() {
     return { auth, db };
   } catch (error) {
     console.error('Failed to initialize Firebase:', error);
-    throw error;
+    // Last ditch effort with local config
+    try {
+      app = initializeApp(firebaseConfig);
+      auth = getAuth(app);
+      db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
+      return { auth, db };
+    } catch (e) {
+      throw error;
+    }
   }
 }
 
