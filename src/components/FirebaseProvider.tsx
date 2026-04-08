@@ -38,6 +38,8 @@ export function useFirebase() {
 
 const ADMIN_EMAILS: string[] = [
   'aimanaimlengineer@gmail.com',
+  'adilabbas812@gmail.com',
+  'aimanmaniyar20@gmail.com',
   'adilabbas@gmail.com',
   'aimanmaniyar28@gmail.com'
 ];
