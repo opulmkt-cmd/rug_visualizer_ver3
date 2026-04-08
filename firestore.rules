@@ -51,7 +51,8 @@ service cloud.firestore {
            'adilabbas812@gmail.com',
            'aimanmaniyar20@gmail.com',
            'adilabbas@gmail.com',
-           'aimanmaniyar28@gmail.com'
+           'aimanmaniyar28@gmail.com',
+           'opulmkt@gmail.com'
          ] && request.auth.token.email_verified == true));
     }
 
