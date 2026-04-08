@@ -59,15 +59,19 @@ export const shopifyService = {
       // Use server proxy for Storefront API to avoid CORS issues in some environments
       const response = await fetch('/api/shopify/storefront', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
           payload: { query, variables },
           token: storefrontToken 
         }),
       });
       
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Shopify Proxy Error: Received HTML instead of JSON. The backend might be restarting.`);
+      }
+
       const result = await response.json();
 
       if (result.errors) {
@@ -114,11 +118,15 @@ export const shopifyService = {
       // MUST use server proxy for Admin API because of CORS
       const response = await fetch('/api/shopify/create-custom-checkout', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...input, adminToken }),
       });
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        const text = await response.text();
+        throw new Error(`Shopify Admin Proxy Error: Received HTML instead of JSON. The backend route might be missing.`);
+      }
 
       const result = await response.json();
       if (!response.ok) {
