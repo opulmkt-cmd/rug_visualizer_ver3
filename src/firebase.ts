@@ -1,6 +1,20 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser, Auth } from 'firebase/auth';
-import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, onSnapshot, getDocFromServer, Firestore } from 'firebase/firestore';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  signInWithPopup,
+  signOut,
+  onAuthStateChanged,
+  User as FirebaseUser,
+  Auth
+} from 'firebase/auth';
+import {
+  getFirestore,
+  doc,
+  getDocFromServer,
+  Firestore
+} from 'firebase/firestore';
+
 import firebaseConfig from '../firebase-applet-config.json';
 
 let app: FirebaseApp;
@@ -12,49 +26,25 @@ export async function initFirebase() {
   if (app) return { auth, db };
 
   try {
-    // Try to fetch from server first for consistency
-    const response = await fetch('/api/config/firebase');
-    let config;
-    
-    if (response.ok) {
-      config = await response.json();
-    } else {
-      // Fallback to local import if server fails
-      config = firebaseConfig;
+    if (!firebaseConfig || !firebaseConfig.apiKey) {
+      throw new Error('Firebase configuration missing');
     }
 
-    if (!config || !config.apiKey) {
-      // Final fallback to local import
-      config = firebaseConfig;
-    }
-
-    if (!config || !config.apiKey) {
-      throw new Error('Firebase configuration not found. Please ensure Firebase is set up.');
-    }
-
-    app = initializeApp(config);
+    app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app, config.firestoreDatabaseId || '(default)');
+    db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
 
-    // Run connection test
+    // Optional connection test
     testConnection();
 
     return { auth, db };
   } catch (error) {
     console.error('Failed to initialize Firebase:', error);
-    // Last ditch effort with local config
-    try {
-      app = initializeApp(firebaseConfig);
-      auth = getAuth(app);
-      db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
-      return { auth, db };
-    } catch (e) {
-      throw error;
-    }
+    throw error;
   }
 }
 
-// Operation types for error handling
+// Operation types
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -80,14 +70,17 @@ interface FirestoreErrorInfo {
       email: string | null;
       photoUrl: string | null;
     }[];
-  }
+  };
 }
 
-/**
- * Standardized error handler for Firestore operations
- */
-export function handleFirestoreError(error: unknown, operationType: OperationType, path: string | null) {
-  if (!auth) throw error; // Fallback if auth is not ready
+// Error handler
+export function handleFirestoreError(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+) {
+  if (!auth) throw error;
+
   const errInfo: FirestoreErrorInfo = {
     error: error instanceof Error ? error.message : String(error),
     authInfo: {
@@ -96,32 +89,35 @@ export function handleFirestoreError(error: unknown, operationType: OperationTyp
       emailVerified: auth.currentUser?.emailVerified,
       isAnonymous: auth.currentUser?.isAnonymous,
       tenantId: auth.currentUser?.tenantId,
-      providerInfo: auth.currentUser?.providerData.map(provider => ({
-        providerId: provider.providerId,
-        displayName: provider.displayName,
-        email: provider.email,
-        photoUrl: provider.photoURL
-      })) || []
+      providerInfo:
+        auth.currentUser?.providerData.map((provider) => ({
+          providerId: provider.providerId,
+          displayName: provider.displayName,
+          email: provider.email,
+          photoUrl: provider.photoURL,
+        })) || [],
     },
     operationType,
-    path
+    path,
   };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
+
+  console.error('Firestore Error:', JSON.stringify(errInfo));
   throw new Error(JSON.stringify(errInfo));
 }
 
-/**
- * Test connection to Firestore
- */
+// Connection test
 export async function testConnection() {
   if (!db) return;
+
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error("Please check your Firebase configuration.");
+    if (
+      error instanceof Error &&
+      error.message.includes('the client is offline')
+    ) {
+      console.error('Check Firebase configuration.');
     }
-    // Skip logging for other errors, as this is simply a connection test.
   }
 }
 
