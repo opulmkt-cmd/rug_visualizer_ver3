@@ -11,18 +11,23 @@ export async function initFirebase() {
   if (app) return { auth, db };
 
   try {
-    const response = await fetch('/api/config/firebase');
-    const config = await response.json();
+    const config = {
+      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+      appId: import.meta.env.VITE_FIREBASE_APP_ID,
+    };
 
     if (!config.apiKey) {
-      throw new Error('Firebase configuration not found on server. Please ensure you have set FIREBASE_API_KEY, FIREBASE_PROJECT_ID, etc. in your Settings menu.');
+      throw new Error('Firebase env variables missing');
     }
 
     app = initializeApp(config);
     auth = getAuth(app);
-    db = getFirestore(app, config.firestoreDatabaseId || '(default)');
+    db = getFirestore(app);
 
-    // Run connection test
     testConnection();
 
     return { auth, db };
@@ -31,7 +36,6 @@ export async function initFirebase() {
     throw error;
   }
 }
-
 // Operation types for error handling
 export enum OperationType {
   CREATE = 'create',
