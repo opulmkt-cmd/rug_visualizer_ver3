@@ -101,6 +101,20 @@
         "updatedAt": { "type": "string", "format": "date-time" }
       },
       "required": ["email", "credits", "tier", "role"]
+    },
+    "SampleRequest": {
+      "title": "SampleRequest",
+      "description": "A request for a physical rug sample",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string", "format": "email" },
+        "imageUrl": { "type": "string" },
+        "config": { "$ref": "RugConfig" },
+        "status": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userEmail", "imageUrl", "config", "createdAt"]
     }
   },
   "firestore": {
@@ -123,6 +137,10 @@
     "/users/{userId}": {
       "schema": "UserProfile",
       "description": "User profiles and credits"
+    },
+    "/sample_requests/{requestId}": {
+      "schema": "SampleRequest",
+      "description": "User's rug sample requests"
     }
   }
 }
