@@ -118,8 +118,15 @@ User Email: ${user?.email || 'Guest'}
       window.open(`mailto:opulmkt@gmail.com?subject=${subject}&body=${body}`, '_blank');
       
       alert('Sample request recorded! Your email client should open now to send the final request.');
-    } catch (error) {
-      handleFirestoreError(error, OperationType.CREATE, 'sample_requests');
+    } catch (error: any) {
+      console.error('Sample Request Error:', error);
+      const errorMessage = error.message || 'An unexpected error occurred.';
+      
+      if (errorMessage.includes('Unexpected token') || errorMessage.includes('HTML')) {
+        alert('Server Error: The backend is currently unavailable or restarting. Please try again in a few seconds.');
+      } else {
+        handleFirestoreError(error, OperationType.CREATE, 'sample_requests');
+      }
     } finally {
       setIsSubmitting(false);
     }
