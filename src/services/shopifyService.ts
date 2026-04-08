@@ -1,9 +1,8 @@
-
 const rawDomain = import.meta.env.VITE_SHOPIFY_STORE_DOMAIN || '';
-// Clean domain: remove https://, trailing slashes, and ensure .myshopify.com is present if it's just the store name
+
 const SHOPIFY_DOMAIN = rawDomain
-  ? (rawDomain.replace(/^https?:\/\//, '').replace(/\/$/, '').includes('.') 
-      ? rawDomain.replace(/^https?:\/\//, '').replace(/\/$/, '') 
+  ? (rawDomain.replace(/^https?:\/\//, '').replace(/\/$/, '').includes('.')
+      ? rawDomain.replace(/^https?:\/\//, '').replace(/\/$/, '')
       : `${rawDomain}.myshopify.com`)
   : '';
 
@@ -16,15 +15,11 @@ interface ShopifyCheckoutInput {
 export const shopifyService = {
   isConfigured: !!rawDomain,
 
+  // ✅ CREATE CHECKOUT (FIXED)
   async createCheckout(input: ShopifyCheckoutInput) {
     if (!SHOPIFY_DOMAIN) {
-      console.error('Shopify Configuration Missing:', { domain: !!SHOPIFY_DOMAIN });
-      throw new Error('Shopify Configuration Missing. Please check your Settings for VITE_SHOPIFY_STORE_DOMAIN.');
+      throw new Error('Shopify domain missing');
     }
-
-   
-
-    console.log(`Creating Shopify checkout for domain: ${SHOPIFY_DOMAIN}`);
 
     const query = `
       mutation cartCreate($input: CartInput) {
@@ -45,8 +40,8 @@ export const shopifyService = {
       input: {
         lines: [
           {
-            merchandiseId: input.variantId.includes('gid://shopify/') 
-              ? input.variantId 
+            merchandiseId: input.variantId.includes('gid://shopify/')
+              ? input.variantId
               : `gid://shopify/ProductVariant/${input.variantId}`,
             quantity: input.quantity,
             attributes: input.customAttributes,
@@ -56,51 +51,52 @@ export const shopifyService = {
     };
 
     try {
-      // Use server proxy for Storefront API to avoid CORS issues in some environments
       const response = await fetch('/api/shopify/storefront', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          payload: { query, variables },
-          token: storefrontToken 
-        }),
+        body: JSON.stringify({ query, variables }), // ✅ FIXED (no token)
       });
-      
+
       const contentType = response.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         const text = await response.text();
-        throw new Error(`Shopify Proxy Error: Received HTML instead of JSON. The backend might be restarting.`);
+        console.error("Shopify HTML error:", text);
+        throw new Error("Shopify API failed");
       }
 
       const result = await response.json();
 
+      if (!response.ok) {
+        throw new Error(result.error || "Shopify request failed");
+      }
+
       if (result.errors) {
-        console.error('Shopify GraphQL Errors:', result.errors);
-        throw new Error(result.errors[0].message || 'Shopify API Error');
+        throw new Error(result.errors[0].message);
       }
 
       if (result.data?.cartCreate?.userErrors?.length > 0) {
-        console.error('Shopify Cart Errors:', result.data.cartCreate.userErrors);
-        const firstError = result.data.cartCreate.userErrors[0];
-        throw new Error(`${firstError.message} (${firstError.field})`);
+        const err = result.data.cartCreate.userErrors[0];
+        throw new Error(`${err.message} (${err.field})`);
       }
 
       const checkoutUrl = result.data?.cartCreate?.cart?.checkoutUrl;
+
       if (!checkoutUrl) {
-        throw new Error('Shopify did not return a checkout URL. Please check your product availability.');
+        throw new Error("Checkout URL not returned");
       }
 
       return checkoutUrl;
-    } catch (error: any) {
-      console.error('Failed to create Shopify checkout:', error);
+
+    } catch (error) {
+      console.error("Checkout Error:", error);
       throw error;
     }
   },
 
-  // Helper to format rug config for Shopify attributes
+  // ✅ FORMAT ATTRIBUTES
   formatRugAttributes(config: any, imageUrl: string) {
-    const attributes = [
-      { key: '_image', value: imageUrl }, // Hidden attribute often used by Shopify themes/checkout
+    return [
+      { key: '_image', value: imageUrl },
       { key: 'Design URL', value: imageUrl },
       { key: 'Prompt', value: config.prompt || 'Custom Design' },
       { key: 'Construction', value: config.construction || 'Hand-knotted' },
@@ -108,33 +104,32 @@ export const shopifyService = {
       { key: 'Size', value: `${config.width}x${config.length} ${config.shape || ''}` },
       { key: 'Pile', value: `${config.pileType} (${config.pileHeight})` },
     ];
-    return attributes;
   },
 
-  async createDynamicCheckout(input: { title: string, price: number, imageUrl: string, attributes: any[], email?: string, type: 'deposit' | 'sample' | 'credits' }) {
+  // ✅ DYNAMIC CHECKOUT (FIXED)
+  async createDynamicCheckout(input: {
+    title: string;
+    price: number;
+    imageUrl: string;
+    attributes: any[];
+    email?: string;
+    type: 'deposit' | 'sample' | 'credits';
+  }) {
     try {
-      const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
-      
-      // MUST use server proxy for Admin API because of CORS
       const response = await fetch('/api/shopify/create-custom-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...input, adminToken }),
+        body: JSON.stringify(input), // ✅ FIXED (no adminToken)
       });
 
-      const contentType = response.headers.get('content-type');
-      if (!contentType || !contentType.includes('application/json')) {
-        const text = await response.text();
-        throw new Error(`Shopify Admin Proxy Error: Received HTML instead of JSON. The backend route might be missing.`);
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.error || "Failed to create product");
       }
 
-      const result = await response.json();
-      if (!response.ok) {
-        throw new Error(result.error || 'Failed to create custom product');
-      }
       const variantId = result.variantId;
 
-      // 2. Create a checkout using the new variant
       const checkoutUrl = await this.createCheckout({
         variantId,
         quantity: 1,
@@ -142,40 +137,51 @@ export const shopifyService = {
       });
 
       return checkoutUrl;
-    } catch (error: any) {
-      console.error('Dynamic Checkout Error:', error);
+
+    } catch (error) {
+      console.error("Dynamic Checkout Error:", error);
       throw error;
     }
   },
 
+  // ✅ PLAN UPGRADE (FIXED)
   async createPlanUpgradeCheckout(email: string, userId: string) {
     try {
-      const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
-      
       const response = await fetch('/api/shopify/create-plan-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, userId, adminToken }),
+        body: JSON.stringify({ email, userId }), // ✅ FIXED
       });
+
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Failed to create upgrade checkout');
-      return result; // { invoiceUrl, draftOrderId }
+
+      if (!response.ok) {
+        throw new Error(result.error || "Upgrade failed");
+      }
+
+      return result;
+
     } catch (error) {
-      console.error('Plan Upgrade Error:', error);
+      console.error("Plan Upgrade Error:", error);
       throw error;
     }
   },
 
+  // ✅ VERIFY UPGRADE (FIXED)
   async verifyUpgrade(draftOrderId: string) {
     try {
-      const adminToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+      const response = await fetch(`/api/shopify/verify-upgrade/${draftOrderId}`);
 
-      const response = await fetch(`/api/shopify/verify-upgrade/${draftOrderId}?token=${adminToken}`);
       const result = await response.json();
-      if (!response.ok) throw new Error(result.error || 'Failed to verify upgrade');
+
+      if (!response.ok) {
+        throw new Error(result.error || "Verification failed");
+      }
+
       return result.isPaid;
+
     } catch (error) {
-      console.error('Verify Upgrade Error:', error);
+      console.error("Verify Upgrade Error:", error);
       throw error;
     }
   }
