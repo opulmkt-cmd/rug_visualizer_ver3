@@ -96,10 +96,7 @@ export const LandingPage: React.FC = () => {
                 </motion.button>
               )}
               <button 
-                onClick={() => {
-                  const el = document.getElementById('how-it-works');
-                  if (el) el.scrollIntoView({ behavior: 'smooth' });
-                }}
+                onClick={() => navigate('/samples')}
                 className="btn-secondary px-10 py-5 text-lg"
               >
                 How it Works
@@ -280,7 +277,7 @@ export const LandingPage: React.FC = () => {
                 Start Designing
               </button>
               <button 
-                onClick={() => window.open('mailto:hello@opul.mkt')}
+                onClick={() => window.open('mailto:jenna@opulmkt.com')}
                 className="px-12 py-6 bg-white/10 text-white font-black text-xl rounded-full hover:bg-white/20 transition-all border border-white/10 w-full sm:w-auto"
               >
                 Work With Our Team
