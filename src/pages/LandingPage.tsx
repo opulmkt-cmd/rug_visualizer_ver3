@@ -1,6 +1,6 @@
 import React from 'react';
-import { motion } from 'motion/react';
-import { ArrowRight, Sparkles, Palette, Ruler, Layers, ShieldCheck, Globe, Zap } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import { ArrowRight, Sparkles, Palette, Ruler, Layers, ShieldCheck, Globe, Zap, Mail, ExternalLink, Copy, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 import { storage } from '../lib/storage';
@@ -12,6 +12,21 @@ export const LandingPage: React.FC = () => {
   const navigate = useNavigate();
   const { user, profile } = useFirebase();
   const [prompt, setPrompt] = React.useState('');
+  const [showContactModal, setShowContactModal] = React.useState(false);
+  const [copied, setCopied] = React.useState(false);
+
+  const email = 'jenna@opulmkt.com';
+  const subject = 'Inquiry from Opul Mkt Platform';
+
+  const handleCopyEmail = () => {
+    navigator.clipboard.writeText(email);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  const openGmail = () => {
+    window.open(`https://mail.google.com/mail/?view=cm&fs=1&to=${email}&su=${encodeURIComponent(subject)}`, '_blank');
+  };
 
   const handleLogin = async () => {
     try {
@@ -277,8 +292,8 @@ export const LandingPage: React.FC = () => {
                 Start Designing
               </button>
               <button 
-                onClick={() => window.open('mailto:jenna@opulmkt.com')}
-                className="px-12 py-6 bg-white/10 text-white font-black text-xl rounded-full hover:bg-white/20 transition-all border border-white/10 w-full sm:w-auto"
+                onClick={() => setShowContactModal(true)}
+                className="px-12 py-6 bg-white/10 text-white font-black text-xl rounded-full hover:bg-white/20 transition-all border border-white/10 w-full sm:w-auto flex items-center justify-center"
               >
                 Work With Our Team
               </button>
@@ -286,6 +301,75 @@ export const LandingPage: React.FC = () => {
           </div>
         </div>
       </section>
+
+      {/* Contact Modal */}
+      <AnimatePresence>
+        {showContactModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center px-6">
+            <motion.div 
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowContactModal(false)}
+              className="absolute inset-0 bg-black/80 backdrop-blur-sm"
+            />
+            <motion.div 
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              className="relative bg-white w-full max-w-md rounded-[2.5rem] p-8 shadow-2xl overflow-hidden"
+            >
+              <button 
+                onClick={() => setShowContactModal(false)}
+                className="absolute top-6 right-6 p-2 hover:bg-black/5 rounded-full transition-colors"
+              >
+                <X className="w-5 h-5 text-black/40" />
+              </button>
+
+              <div className="text-center mb-8">
+                <div className="w-16 h-16 bg-[#EFBB76]/10 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                  <Mail className="w-8 h-8 text-[#EFBB76]" />
+                </div>
+                <h3 className="text-2xl font-serif font-bold text-black mb-2">Contact Our Team</h3>
+                <p className="text-sm text-black/40">Choose your preferred way to reach out to Jenna.</p>
+              </div>
+
+              <div className="space-y-3">
+                <button 
+                  onClick={openGmail}
+                  className="w-full flex items-center justify-between p-5 bg-black/[0.02] hover:bg-black/[0.05] border border-black/5 rounded-2xl transition-all group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 bg-white rounded-xl flex items-center justify-center shadow-sm border border-black/5">
+                      <img src="https://www.gstatic.com/images/branding/product/2x/gmail_2020q4_48dp.png" alt="Gmail" className="w-6 h-6" />
+                    </div>
+                    <span className="font-bold text-black">Open in Gmail</span>
+                  </div>
+                  <ExternalLink className="w-4 h-4 text-black/20 group-hover:text-black/40 transition-colors" />
+                </button>
+
+                <div className="pt-4">
+                  <div className="flex items-center gap-2 p-4 bg-black/5 rounded-2xl border border-dashed border-black/10">
+                    <div className="flex-grow truncate text-xs font-mono text-black/60">
+                      {email}
+                    </div>
+                    <button 
+                      onClick={handleCopyEmail}
+                      className="shrink-0 p-2 bg-white hover:bg-black/5 rounded-lg border border-black/5 transition-all flex items-center gap-2"
+                    >
+                      {copied ? (
+                        <span className="text-[10px] font-bold text-green-600 uppercase tracking-widest">Copied!</span>
+                      ) : (
+                        <Copy className="w-4 h-4 text-black/40" />
+                      )}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 };
