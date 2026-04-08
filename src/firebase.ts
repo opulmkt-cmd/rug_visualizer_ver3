@@ -8,6 +8,7 @@ import {
   User as FirebaseUser,
   Auth
 } from 'firebase/auth';
+
 import {
   getFirestore,
   doc,
@@ -15,36 +16,42 @@ import {
   Firestore
 } from 'firebase/firestore';
 
+// ✅ IMPORT DIRECTLY FROM FILE
 import firebaseConfig from '../firebase-applet-config.json';
 
 let app: FirebaseApp;
 export let auth: Auth;
 export let db: Firestore;
+
 export const googleProvider = new GoogleAuthProvider();
 
+// 🚀 INIT FUNCTION
 export async function initFirebase() {
   if (app) return { auth, db };
 
   try {
+    // 🔥 Validate config (prevents "simulated" issue)
     if (!firebaseConfig || !firebaseConfig.apiKey) {
-      throw new Error('Firebase configuration missing');
+      console.error("Firebase Config:", firebaseConfig);
+      throw new Error("Firebase config missing or invalid");
     }
 
     app = initializeApp(firebaseConfig);
     auth = getAuth(app);
     db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
 
-    // Optional connection test
+    // Optional test
     testConnection();
 
     return { auth, db };
+
   } catch (error) {
-    console.error('Failed to initialize Firebase:', error);
+    console.error("Firebase Init Error:", error);
     throw error;
   }
 }
 
-// Operation types
+// 🔥 ERROR HANDLER
 export enum OperationType {
   CREATE = 'create',
   UPDATE = 'update',
@@ -54,26 +61,6 @@ export enum OperationType {
   WRITE = 'write',
 }
 
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId: string | undefined;
-    email: string | null | undefined;
-    emailVerified: boolean | undefined;
-    isAnonymous: boolean | undefined;
-    tenantId: string | null | undefined;
-    providerInfo: {
-      providerId: string;
-      displayName: string | null;
-      email: string | null;
-      photoUrl: string | null;
-    }[];
-  };
-}
-
-// Error handler
 export function handleFirestoreError(
   error: unknown,
   operationType: OperationType,
@@ -81,45 +68,32 @@ export function handleFirestoreError(
 ) {
   if (!auth) throw error;
 
-  const errInfo: FirestoreErrorInfo = {
+  const errInfo = {
     error: error instanceof Error ? error.message : String(error),
+    operationType,
+    path,
     authInfo: {
       userId: auth.currentUser?.uid,
       email: auth.currentUser?.email,
       emailVerified: auth.currentUser?.emailVerified,
-      isAnonymous: auth.currentUser?.isAnonymous,
-      tenantId: auth.currentUser?.tenantId,
-      providerInfo:
-        auth.currentUser?.providerData.map((provider) => ({
-          providerId: provider.providerId,
-          displayName: provider.displayName,
-          email: provider.email,
-          photoUrl: provider.photoURL,
-        })) || [],
     },
-    operationType,
-    path,
   };
 
-  console.error('Firestore Error:', JSON.stringify(errInfo));
+  console.error("Firestore Error:", errInfo);
   throw new Error(JSON.stringify(errInfo));
 }
 
-// Connection test
-export async function testConnection() {
+// 🔍 CONNECTION TEST
+async function testConnection() {
   if (!db) return;
 
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes('the client is offline')
-    ) {
-      console.error('Check Firebase configuration.');
-    }
+    console.warn("Firestore connection test skipped");
   }
 }
 
+// EXPORTS
 export { signInWithPopup, signOut, onAuthStateChanged };
 export type { FirebaseUser };
