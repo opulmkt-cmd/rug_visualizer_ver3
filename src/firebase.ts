@@ -1,6 +1,7 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, User as FirebaseUser, Auth } from 'firebase/auth';
 import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, collection, query, where, onSnapshot, getDocFromServer, Firestore } from 'firebase/firestore';
+import firebaseConfig from '../firebase-applet-config.json';
 
 let app: FirebaseApp;
 export let auth: Auth;
@@ -11,23 +12,11 @@ export async function initFirebase() {
   if (app) return { auth, db };
 
   try {
-    const config = {
-      apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-      authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-      projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-      storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-      messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-      appId: import.meta.env.VITE_FIREBASE_APP_ID,
-    };
-
-    if (!config.apiKey) {
-      throw new Error('Firebase env variables missing');
-    }
-
-    app = initializeApp(config);
+    app = initializeApp(firebaseConfig);
     auth = getAuth(app);
-    db = getFirestore(app);
+    db = getFirestore(app, firebaseConfig.firestoreDatabaseId || '(default)');
 
+    // Run connection test
     testConnection();
 
     return { auth, db };
@@ -36,6 +25,7 @@ export async function initFirebase() {
     throw error;
   }
 }
+
 // Operation types for error handling
 export enum OperationType {
   CREATE = 'create',
